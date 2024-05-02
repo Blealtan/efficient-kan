@@ -86,11 +86,11 @@ class KANLinear(torch.nn.Module):
             bases = (
                 (x - grid[:, : -(k + 1)])
                 / (grid[:, k:-1] - grid[:, : -(k + 1)])
-                * bases[:, :-1]
+                * bases[:, :, :-1]
             ) + (
                 (grid[:, k + 1 :] - x)
                 / (grid[:, k + 1 :] - grid[:, 1:(-k)])
-                * bases[:, 1:]
+                * bases[:, :, 1:]
             )
 
         assert bases.size() == (
@@ -117,9 +117,7 @@ class KANLinear(torch.nn.Module):
         A = self.b_splines(x).transpose(
             0, 1
         )  # (in_features, batch_size, grid_size + spline_order)
-        B = y.transpose(0, 1).unsqueeze(
-            dim=2
-        )  # (in_features, batch_size, out_features)
+        B = y.transpose(0, 1)  # (in_features, batch_size, out_features)
         solution = torch.linalg.lstsq(
             A, B
         ).solution  # (in_features, grid_size + spline_order, out_features)
@@ -178,3 +176,76 @@ class KANLinear(torch.nn.Module):
             self.grid_eps * grid_uniform + (1 - self.grid_eps) * grid_adaptive
         )
         self.spline_weight.data.copy_(self.curve2coeff(x, unreduced_spline_output))
+
+    def regularization_loss(self, regularize_activation=1.0, regularize_entropy=1.0):
+        """
+        Compute the regularization loss.
+
+        This is a dumb simulation of the original L1 regularization as stated in the
+        paper, since the original one requires computing absolutes and entropy from the
+        expanded (batch, in_features, out_features) intermediate tensor, which is hidden
+        behind the F.linear function if we want an memory efficient implementation.
+        
+        The L1 regularization is now computed as mean absolute value of the spline
+        weights. The authors implementation also includes this term in addition to the
+        sample-based regularization.
+        """
+        l1_fake = self.spline_weight.abs().mean(-1)
+        regularization_loss_activation = l1_fake.sum()
+        p = l1_fake / regularization_loss_activation
+        regularization_loss_entropy = -torch.sum(p * p.log())
+        return (
+            regularize_activation * regularization_loss_activation
+            + regularize_entropy * regularization_loss_entropy
+        )
+
+
+class KAN(torch.nn.Module):
+    def __init__(
+        self,
+        layers_hidden,
+        grid_size=5,
+        spline_order=3,
+        scale_noise=0.1,
+        scale_base=1.0,
+        scale_spline=1.0,
+        base_activation=torch.nn.SiLU,
+        grid_eps=0.02,
+        grid_range=[-1, 1],
+    ):
+        super(KAN, self).__init__()
+        self.grid_size = grid_size
+        self.spline_order = spline_order
+
+        self.layers = torch.nn.ModuleList()
+        for in_features, out_features in zip(layers_hidden, layers_hidden[1:]):
+            self.layers.append(
+                KANLinear(
+                    in_features,
+                    out_features,
+                    grid_size=grid_size,
+                    spline_order=spline_order,
+                    scale_noise=scale_noise,
+                    scale_base=scale_base,
+                    scale_spline=scale_spline,
+                    base_activation=base_activation,
+                    grid_eps=grid_eps,
+                    grid_range=grid_range,
+                )
+            )
+
+    def forward(self, x: torch.Tensor):
+        for layer in self.layers:
+            x = layer(x)
+        return x
+
+    @torch.no_grad()
+    def update_grid(self, x: torch.Tensor, margin=0.01):
+        for layer in self.layers:
+            layer.update_grid(x, margin)
+
+    def regularization_loss(self, regularize_activation=1.0, regularize_entropy=1.0):
+        return sum(
+            layer.regularization_loss(regularize_activation, regularize_entropy)
+            for layer in self.layers
+        )
