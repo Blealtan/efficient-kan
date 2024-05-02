@@ -166,15 +166,29 @@ class KANLinear(torch.nn.Module):
 
         uniform_step = (x_sorted[-1] - x_sorted[0] + 2 * margin) / self.grid_size
         grid_uniform = (
-            torch.arange(self.grid_size + 1, dtype=torch.float32, device=x.device)
+            torch.arange(
+                self.grid_size + 1, dtype=torch.float32, device=x.device
+            ).unsqueeze(1)
             * uniform_step
             + x_sorted[0]
             - margin
         )
 
-        self.grid.copy_(
-            self.grid_eps * grid_uniform + (1 - self.grid_eps) * grid_adaptive
+        grid = self.grid_eps * grid_uniform + (1 - self.grid_eps) * grid_adaptive
+        grid = torch.concatenate(
+            [
+                grid[:1]
+                - uniform_step
+                * torch.arange(self.spline_order, 0, -1, device=x.device).unsqueeze(1),
+                grid,
+                grid[-1:]
+                + uniform_step
+                * torch.arange(1, self.spline_order + 1, device=x.device).unsqueeze(1),
+            ],
+            dim=0,
         )
+
+        self.grid.copy_(grid.T)
         self.spline_weight.data.copy_(self.curve2coeff(x, unreduced_spline_output))
 
     def regularization_loss(self, regularize_activation=1.0, regularize_entropy=1.0):
@@ -185,7 +199,7 @@ class KANLinear(torch.nn.Module):
         paper, since the original one requires computing absolutes and entropy from the
         expanded (batch, in_features, out_features) intermediate tensor, which is hidden
         behind the F.linear function if we want an memory efficient implementation.
-        
+
         The L1 regularization is now computed as mean absolute value of the spline
         weights. The authors implementation also includes this term in addition to the
         sample-based regularization.
@@ -234,15 +248,12 @@ class KAN(torch.nn.Module):
                 )
             )
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor, update_grid=False):
         for layer in self.layers:
+            if update_grid:
+                layer.update_grid(x)
             x = layer(x)
         return x
-
-    @torch.no_grad()
-    def update_grid(self, x: torch.Tensor, margin=0.01):
-        for layer in self.layers:
-            layer.update_grid(x, margin)
 
     def regularization_loss(self, regularize_activation=1.0, regularize_entropy=1.0):
         return sum(

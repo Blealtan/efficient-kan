@@ -9,13 +9,14 @@ def test_mul():
     kan = KAN([2, 2, 1], base_activation=nn.Identity)
     optimizer = torch.optim.LBFGS(kan.parameters(), lr=1)
     with tqdm(range(100)) as pbar:
-        for _ in pbar:
+        for i in pbar:
             loss, reg_loss = None, None
 
             def closure():
                 optimizer.zero_grad()
                 x = torch.rand(1024, 2)
-                y = kan(x)
+                y = kan(x, update_grid=(i % 20 == 0))
+
                 assert y.shape == (1024, 1)
                 nonlocal loss, reg_loss
                 u = x[:, 0]
