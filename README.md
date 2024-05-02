@@ -12,4 +12,8 @@ The problem is in the **sparsification** which is claimed to be critical to KAN'
 The authors proposed a L1 regularization defined on the input samples, which requires non-linear operations on the `(batch_size, out_features, in_features)` tensor, and is thus not compatible with the reformulation.
 I instead replace the L1 regularization with a L1 regularization on the weights, which is more common in neural networks and is compatible with the reformulation.
 The author's implementation indeed include this kind of regularization alongside the one described in the paper as well, so I think it might help.
-More experiments are needed to verify this.
+More experiments are needed to verify this; but at least the original approach is infeasible if efficiency is wanted.
+
+Another difference is that, beside the learnable activation functions (B-splines), the original implementation also includes a learnable scale on each activation function.
+For simplicity, I remove this scaler since the learnable activation functions are able to learn magnitudes as well.
+If further experiments show the necessity of this scaler, I will add it back.
