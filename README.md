@@ -15,5 +15,5 @@ The author's implementation indeed include this kind of regularization alongside
 More experiments are needed to verify this; but at least the original approach is infeasible if efficiency is wanted.
 
 Another difference is that, beside the learnable activation functions (B-splines), the original implementation also includes a learnable scale on each activation function.
-For simplicity, I remove this scaler since the learnable activation functions are able to learn magnitudes as well.
-If further experiments show the necessity of this scaler, I will add it back.
+I provided an option `enable_standalone_scale_spline` that defaults to `True` to include this feature; disable it will make the model more efficient, but potentially hurts results.
+It needs more experiments.
