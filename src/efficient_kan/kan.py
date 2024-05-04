@@ -140,13 +140,19 @@ class KANLinear(torch.nn.Module):
         )
         return result.contiguous()
 
+    @property
+    def scaled_spline_weight(self):
+        return self.spline_weight * (
+            self.spline_scaler if self.enable_standalone_scale_spline else 1.0
+        )
+
     def forward(self, x: torch.Tensor):
         assert x.dim() == 2 and x.size(1) == self.in_features
 
         base_output = F.linear(self.base_activation(x), self.base_weight)
         spline_output = F.linear(
             self.b_splines(x).view(x.size(0), -1),
-            self.spline_weight.view(self.out_features, -1),
+            self.scaled_spline_weight.view(self.out_features, -1),
         )
         return base_output + spline_output
 
@@ -157,7 +163,7 @@ class KANLinear(torch.nn.Module):
 
         splines = self.b_splines(x)  # (batch, in, coeff)
         splines = splines.permute(1, 0, 2)  # (in, batch, coeff)
-        orig_coeff = self.spline_weight  # (out, in, coeff)
+        orig_coeff = self.scaled_spline_weight  # (out, in, coeff)
         orig_coeff = orig_coeff.permute(1, 2, 0)  # (in, coeff, out)
         unreduced_spline_output = torch.bmm(splines, orig_coeff)  # (in, batch, out)
         unreduced_spline_output = unreduced_spline_output.permute(
