@@ -53,7 +53,7 @@ class KANLinear(torch.nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        torch.nn.init.constant_(self.base_weight, self.scale_base)
+        torch.nn.init.xavier_uniform_(self.base_weight, gain=self.scale_base)
         with torch.no_grad():
             noise = (
                 (
@@ -143,7 +143,9 @@ class KANLinear(torch.nn.Module):
     @property
     def scaled_spline_weight(self):
         return self.spline_weight * (
-            self.spline_scaler if self.enable_standalone_scale_spline else 1.0
+            self.spline_scaler.unsqueeze(-1)
+            if self.enable_standalone_scale_spline
+            else 1.0
         )
 
     def forward(self, x: torch.Tensor):
