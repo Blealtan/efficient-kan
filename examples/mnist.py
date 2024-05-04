@@ -23,16 +23,16 @@ trainloader = DataLoader(trainset, batch_size=64, shuffle=True)
 valloader = DataLoader(valset, batch_size=64, shuffle=False)
 
 # Define model
-model = KAN([28 * 28, 10])
+model = KAN([28 * 28, 64, 10])
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model.to(device)
-
 # Define optimizer
-optimizer = optim.Adam(model.parameters(), lr=1e-3)
+optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
+# Define learning rate scheduler
+scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.8)
 
 # Define loss
 criterion = nn.CrossEntropyLoss()
-
 for epoch in range(10):
     # Train
     model.train()
@@ -45,7 +45,7 @@ for epoch in range(10):
             loss.backward()
             optimizer.step()
             accuracy = (output.argmax(dim=1) == labels.to(device)).float().mean()
-            pbar.set_postfix(loss=loss.item(), accuracy=accuracy.item())
+            pbar.set_postfix(loss=loss.item(), accuracy=accuracy.item(), lr=optimizer.param_groups[0]['lr'])
 
     # Validation
     model.eval()
@@ -59,9 +59,11 @@ for epoch in range(10):
             val_accuracy += (
                 (output.argmax(dim=1) == labels.to(device)).float().mean().item()
             )
-
     val_loss /= len(valloader)
     val_accuracy /= len(valloader)
+
+    # Update learning rate
+    scheduler.step()
 
     print(
         f"Epoch {epoch + 1}, Val Loss: {val_loss}, Val Accuracy: {val_accuracy}"
