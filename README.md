@@ -17,3 +17,7 @@ More experiments are needed to verify this; but at least the original approach i
 Another difference is that, beside the learnable activation functions (B-splines), the original implementation also includes a learnable scale on each activation function.
 I provided an option `enable_standalone_scale_spline` that defaults to `True` to include this feature; disable it will make the model more efficient, but potentially hurts results.
 It needs more experiments.
+
+2024-05-04 Update: @xiaol hinted that the constant initialization of `base_weight` parameters can be a problem on MNIST.
+For now I've changed both the `base_weight` and `spline_scaler` matrices to be initialized with `kaiming_uniform_`, following `nn.Linear`'s initialization.
+It seems to work much much better on MNIST (~20% to ~97%), but I'm not sure if it's a good idea in general.
