@@ -20,4 +20,4 @@ It needs more experiments.
 
 2024-05-04 Update: @xiaol hinted that the constant initialization of `base_weight` parameters can be a problem on MNIST.
 For now I've changed both the `base_weight` and `spline_scaler` matrices to be initialized with `kaiming_uniform_`, following `nn.Linear`'s initialization.
-It seems to work much much better on MNIST (~20% to ~97%), but I'm not sure if it's a good idea in general.
+It seems to work much better on MNIST (~20% to ~97%), but I'm not sure if it's a good idea in general.
