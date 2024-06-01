@@ -186,7 +186,6 @@ class KANLinear(torch.nn.Module):
         self.grid.copy_(rearrange(grid, 'g 1 -> 1 g'))
         self.spline_weight.data.copy_(self.curve2coeff(x, unreduced_spline_output))
 
-
     def regularization_loss(self, regularize_activation=1.0, regularize_entropy=1.0):
         """
         Compute the regularization loss.
