@@ -104,8 +104,6 @@ class KANLinear(torch.nn.Module):
         )
         return bases.contiguous()
 
-    from einops import rearrange
-
     def curve2coeff(self, x: torch.Tensor, y: torch.Tensor):
         """
         Compute the coefficients of the curve that interpolates the given points.
@@ -209,15 +207,12 @@ class KANLinear(torch.nn.Module):
         weights. The authors implementation also includes this term in addition to the
         sample-based regularization.
         """
-        # Compute L1 regularization term using einops
         l1_fake = reduce(self.spline_weight, '... -> ...', 'abs').mean(-1)
         regularization_loss_activation = l1_fake.sum()
 
-        # Compute entropy regularization term
         p = l1_fake / regularization_loss_activation
         regularization_loss_entropy = -torch.sum(p * p.log())
 
-        # Combine the regularization terms
         return (
             regularize_activation * regularization_loss_activation
             + regularize_entropy * regularization_loss_entropy
