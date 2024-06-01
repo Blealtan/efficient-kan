@@ -209,10 +209,8 @@ class KANLinear(torch.nn.Module):
         """
         l1_fake = reduce(self.spline_weight, '... -> ...', 'abs').mean(-1)
         regularization_loss_activation = l1_fake.sum()
-
         p = l1_fake / regularization_loss_activation
         regularization_loss_entropy = -torch.sum(p * p.log())
-
         return (
             regularize_activation * regularization_loss_activation
             + regularize_entropy * regularization_loss_entropy
@@ -265,4 +263,3 @@ class KAN(torch.nn.Module):
             layer.regularization_loss(regularize_activation, regularize_entropy)
             for layer in self.layers
         )
-    
