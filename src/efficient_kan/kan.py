@@ -84,14 +84,13 @@ class KANLinear(torch.nn.Module):
 
         Returns:
             torch.Tensor: B-spline bases tensor of shape (batch_size, in_features, grid_size + spline_order).
-         """
+        """
         assert x.dim() == 2 and x.size(1) == self.in_features
 
         grid: torch.Tensor = self.grid  # (in_features, grid_size + 2 * spline_order + 1)
         x = rearrange(x, 'b f -> b f 1')
         bases = (x >= grid[:, :-1]) & (x < grid[:, 1:])
         bases = bases.to(x.dtype)
-
         for k in range(1, self.spline_order + 1):
             left = (x - grid[:, :-(k + 1)]) / (grid[:, k:-1] - grid[:, :-(k + 1)])
             right = (grid[:, k + 1:] - x) / (grid[:, k + 1:] - grid[:, 1:(-k)])
@@ -108,7 +107,7 @@ class KANLinear(torch.nn.Module):
         """
         Compute the coefficients of the curve that interpolates the given points.
 
-         Args:
+        Args:
             x (torch.Tensor): Input tensor of shape (batch_size, in_features).
             y (torch.Tensor): Output tensor of shape (batch_size, in_features, out_features).
 
@@ -162,18 +161,12 @@ class KANLinear(torch.nn.Module):
         assert x.dim() == 2 and x.size(1) == self.in_features
         batch = x.size(0)
 
-        # Compute splines and permute dimensions
         splines = self.b_splines(x)  # (batch, in, coeff)
         splines = rearrange(splines, 'b in coeff -> in b coeff')
-
-        # Permute coefficient dimensions
         orig_coeff = self.scaled_spline_weight  # (out, in, coeff)
         orig_coeff = rearrange(orig_coeff, 'out in coeff -> in coeff out')
-
-        # Compute unreduced spline output
         unreduced_spline_output = torch.einsum('ibc, ico -> ibo', splines, orig_coeff)
 
-        # Sort and calculate grid
         x_sorted = torch.sort(x, dim=0)[0]
         indices = torch.linspace(0, batch - 1, self.grid_size + 1, dtype=torch.int64, device=x.device)
         grid_adaptive = x_sorted[indices]
