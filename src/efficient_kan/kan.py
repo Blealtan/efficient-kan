@@ -1,48 +1,55 @@
+import math
+
 import torch
 import torch.nn.functional as F
-import math
 
 
 class KANLinear(torch.nn.Module):
     def __init__(
-        self,
-        in_features,
-        out_features,
-        grid_size=5,
-        spline_order=3,
-        scale_noise=0.1,
-        scale_base=1.0,
-        scale_spline=1.0,
-        enable_standalone_scale_spline=True,
-        base_activation=torch.nn.SiLU,
-        grid_eps=0.02,
-        grid_range=[-1, 1],
+            self,
+            in_features,
+            out_features,
+            grid_size=5,
+            spline_order=3,
+            scale_noise=0.1,
+            scale_base=1.0,
+            scale_spline=1.0,
+            enable_standalone_scale_spline=True,
+            base_activation=torch.nn.SiLU,
+            grid_eps=0.02,
+            grid_range=[-1, 1],
+            sb_trainable=True,
+            sp_trainable=True,
     ):
         super(KANLinear, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
         self.grid_size = grid_size
         self.spline_order = spline_order
+        self.sb_trainable = sb_trainable
+        self.sp_trainable = sp_trainable
 
         h = (grid_range[1] - grid_range[0]) / grid_size
         grid = (
             (
-                torch.arange(-spline_order, grid_size + spline_order + 1) * h
-                + grid_range[0]
+                    torch.arange(-spline_order, grid_size + spline_order + 1) * h
+                    + grid_range[0]
             )
             .expand(in_features, -1)
             .contiguous()
         )
         self.register_buffer("grid", grid)
 
-        self.base_weight = torch.nn.Parameter(torch.Tensor(out_features, in_features))
+        self.base_weight = torch.nn.Parameter(torch.Tensor(out_features, in_features)).requires_grad_(
+            sp_trainable)  # sp_trainable
+
         self.spline_weight = torch.nn.Parameter(
             torch.Tensor(out_features, in_features, grid_size + spline_order)
         )
+
         if enable_standalone_scale_spline:
-            self.spline_scaler = torch.nn.Parameter(
-                torch.Tensor(out_features, in_features)
-            )
+            self.spline_scaler = torch.nn.Parameter(torch.Tensor(out_features, in_features)).requires_grad_(
+                sb_trainable)  # sb_trainable
 
         self.scale_noise = scale_noise
         self.scale_base = scale_base
@@ -52,27 +59,27 @@ class KANLinear(torch.nn.Module):
         self.grid_eps = grid_eps
 
         self.reset_parameters()
+        self.double()
 
     def reset_parameters(self):
         torch.nn.init.kaiming_uniform_(self.base_weight, a=math.sqrt(5) * self.scale_base)
         with torch.no_grad():
             noise = (
-                (
-                    torch.rand(self.grid_size + 1, self.in_features, self.out_features)
-                    - 1 / 2
-                )
-                * self.scale_noise
-                / self.grid_size
+                    (
+                            torch.rand(self.grid_size + 1, self.in_features, self.out_features)
+                            - 1 / 2
+                    )
+                    * self.scale_noise
+                    / self.grid_size
             )
             self.spline_weight.data.copy_(
                 (self.scale_spline if not self.enable_standalone_scale_spline else 1.0)
                 * self.curve2coeff(
-                    self.grid.T[self.spline_order : -self.spline_order],
+                    self.grid.T[self.spline_order: -self.spline_order],
                     noise,
                 )
             )
             if self.enable_standalone_scale_spline:
-                # torch.nn.init.constant_(self.spline_scaler, self.scale_spline)
                 torch.nn.init.kaiming_uniform_(self.spline_scaler, a=math.sqrt(5) * self.scale_spline)
 
     def b_splines(self, x: torch.Tensor):
@@ -94,14 +101,14 @@ class KANLinear(torch.nn.Module):
         bases = ((x >= grid[:, :-1]) & (x < grid[:, 1:])).to(x.dtype)
         for k in range(1, self.spline_order + 1):
             bases = (
-                (x - grid[:, : -(k + 1)])
-                / (grid[:, k:-1] - grid[:, : -(k + 1)])
-                * bases[:, :, :-1]
-            ) + (
-                (grid[:, k + 1 :] - x)
-                / (grid[:, k + 1 :] - grid[:, 1:(-k)])
-                * bases[:, :, 1:]
-            )
+                            (x - grid[:, : -(k + 1)])
+                            / (grid[:, k:-1] - grid[:, : -(k + 1)])
+                            * bases[:, :, :-1]
+                    ) + (
+                            (grid[:, k + 1:] - x)
+                            / (grid[:, k + 1:] - grid[:, 1:(-k)])
+                            * bases[:, :, 1:]
+                    )
 
         assert bases.size() == (
             x.size(0),
@@ -153,16 +160,17 @@ class KANLinear(torch.nn.Module):
     def forward(self, x: torch.Tensor):
         assert x.size(-1) == self.in_features
         original_shape = x.shape
-        x = x.reshape(-1, self.in_features)
+        x = x.view(-1, self.in_features)
 
-        base_output = F.linear(self.base_activation(x), self.base_weight)
+        base_output = F.linear(self.base_activation(x).double(), self.base_weight)
+
         spline_output = F.linear(
             self.b_splines(x).view(x.size(0), -1),
             self.scaled_spline_weight.view(self.out_features, -1),
         )
-        output = base_output + spline_output
-        
-        output = output.reshape(*original_shape[:-1], self.out_features)
+        output = spline_output + base_output
+
+        output = output.view(*original_shape[:-1], self.out_features)
         return output
 
     @torch.no_grad()
@@ -189,12 +197,12 @@ class KANLinear(torch.nn.Module):
 
         uniform_step = (x_sorted[-1] - x_sorted[0] + 2 * margin) / self.grid_size
         grid_uniform = (
-            torch.arange(
-                self.grid_size + 1, dtype=torch.float32, device=x.device
-            ).unsqueeze(1)
-            * uniform_step
-            + x_sorted[0]
-            - margin
+                torch.arange(
+                    self.grid_size + 1, dtype=torch.float32, device=x.device
+                ).unsqueeze(1)
+                * uniform_step
+                + x_sorted[0]
+                - margin
         )
 
         grid = self.grid_eps * grid_uniform + (1 - self.grid_eps) * grid_adaptive
@@ -232,23 +240,26 @@ class KANLinear(torch.nn.Module):
         p = l1_fake / regularization_loss_activation
         regularization_loss_entropy = -torch.sum(p * p.log())
         return (
-            regularize_activation * regularization_loss_activation
-            + regularize_entropy * regularization_loss_entropy
+                regularize_activation * regularization_loss_activation
+                + regularize_entropy * regularization_loss_entropy
         )
 
 
 class KAN(torch.nn.Module):
     def __init__(
-        self,
-        layers_hidden,
-        grid_size=5,
-        spline_order=3,
-        scale_noise=0.1,
-        scale_base=1.0,
-        scale_spline=1.0,
-        base_activation=torch.nn.SiLU,
-        grid_eps=0.02,
-        grid_range=[-1, 1],
+            self,
+            layers_hidden,
+            grid_size=5,
+            spline_order=3,
+            scale_noise=0.1,
+            scale_base=1.0,
+            scale_spline=1.0,
+            base_activation=torch.nn.SiLU,
+            grid_eps=0.02,
+            grid_range=[-1, 1],
+            enable_standalone_scale_spline=True,
+            sb_trainable=True,
+            sp_trainable=True,
     ):
         super(KAN, self).__init__()
         self.grid_size = grid_size
@@ -268,6 +279,9 @@ class KAN(torch.nn.Module):
                     base_activation=base_activation,
                     grid_eps=grid_eps,
                     grid_range=grid_range,
+                    enable_standalone_scale_spline=enable_standalone_scale_spline,
+                    sb_trainable=sb_trainable,
+                    sp_trainable=sp_trainable,
                 )
             )
 
