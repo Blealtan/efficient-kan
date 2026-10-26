@@ -19,8 +19,12 @@ trainset = torchvision.datasets.MNIST(
 valset = torchvision.datasets.MNIST(
     root="./data", train=False, download=True, transform=transform
 )
-trainloader = DataLoader(trainset, batch_size=64, shuffle=True)
-valloader = DataLoader(valset, batch_size=64, shuffle=False)
+trainloader = DataLoader(
+    trainset, batch_size=64, shuffle=True, num_workers=4, persistent_workers=True
+)
+valloader = DataLoader(
+    valset, batch_size=64, shuffle=False, num_workers=4, persistent_workers=True
+)
 
 # Define model
 model = KAN([28 * 28, 64, 10])
