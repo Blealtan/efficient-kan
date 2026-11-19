@@ -172,7 +172,8 @@ class KANLinear(torch.nn.Module):
 
         splines = self.b_splines(x)  # (batch, in, coeff)
         splines = splines.permute(1, 0, 2)  # (in, batch, coeff)
-        orig_coeff = self.scaled_spline_weight  # (out, in, coeff)
+        # use the unscaled weights, otherwise we apply spline_scaler twice
+        orig_coeff = self.spline_weight  # (out, in, coeff)
         orig_coeff = orig_coeff.permute(1, 2, 0)  # (in, coeff, out)
         unreduced_spline_output = torch.bmm(splines, orig_coeff)  # (in, batch, out)
         unreduced_spline_output = unreduced_spline_output.permute(
